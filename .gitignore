@@ -10,3 +10,6 @@ obj/
 
 # local
 *.log
+
+# dev scripts
+tools/
