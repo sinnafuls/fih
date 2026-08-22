@@ -1,0 +1,98 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <AssemblyName>fih</AssemblyName>
+    <RootNamespace>fih</RootNamespace>
+    <Product>fih</Product>
+    <Version>1.0.0</Version>
+    <Authors>sin</Authors>
+    <Copyright>sin</Copyright>
+    <Description>Debug and cheat menu for How to Fish, built on BepInEx, HarmonyX and Dear ImGui.</Description>
+    <RepositoryUrl>https://github.com/sinnafuls/fih</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/sinnafuls/fih</PackageProjectUrl>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <LangVersion>latest</LangVersion>
+    <RestoreAdditionalProjectSources>
+      https://api.nuget.org/v3/index.json;
+      https://nuget.bepinex.dev/v3/index.json;
+      https://nuget.samboy.dev/v3/index.json
+    </RestoreAdditionalProjectSources>
+  </PropertyGroup>
+
+  <!--
+    Game location. Resolution order, first hit wins:
+      1. env var FIH_GAME_DIR, or `dotnet build -p:GameDir=...`
+      2. the Steam install found in the registry
+      3. each root listed in SteamLibraryRoots
+    Nothing below needs editing unless you move the game or add a Steam library.
+  -->
+  <PropertyGroup>
+    <SteamPath Condition="'$(SteamPath)' == ''">$([MSBuild]::GetRegistryValueFromView('HKEY_CURRENT_USER\SOFTWARE\Valve\Steam', 'SteamPath', null, RegistryView.Registry64, RegistryView.Registry32))</SteamPath>
+    <SteamLibraryRoots>D:\SteamLibrary</SteamLibraryRoots>
+    <GameInstallPath>steamapps\common\How to Fish\How to Fish</GameInstallPath>
+
+    <GameDir Condition="'$(GameDir)' == ''">$(FIH_GAME_DIR)</GameDir>
+    <GameDir Condition="'$(GameDir)' == '' And Exists('$(SteamPath)\$(GameInstallPath)')">$(SteamPath)\$(GameInstallPath)</GameDir>
+    <GameDir Condition="'$(GameDir)' == '' And Exists('$(SteamLibraryRoots)\$(GameInstallPath)')">$(SteamLibraryRoots)\$(GameInstallPath)</GameDir>
+
+    <GameManagedDir>$(GameDir)\How to Fish_Data\Managed</GameManagedDir>
+    <PluginDeployDir>$(GameDir)\BepInEx\plugins\$(AssemblyName)</PluginDeployDir>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <!-- Resolved straight from the NuGet cache: a library project does not copy package
+         assemblies to bin, and enabling CopyLocalLockFileAssemblies would also drag
+         BepInEx/Harmony/Cecil into the plugin folder and risk assembly conflicts. -->
+    <ImGuiManaged>$(NuGetPackageRoot)imgui.net\1.91.6.1\lib\netstandard2.0\ImGui.NET.dll</ImGuiManaged>
+    <!-- cimgui is loaded by DllImport("cimgui"), so it must sit in the process directory. -->
+    <CimguiNative>$(NuGetPackageRoot)imgui.net\1.91.6.1\runtimes\win-x64\native\cimgui.dll</CimguiNative>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BepInEx.Analyzers" Version="1.*" PrivateAssets="all" />
+    <PackageReference Include="BepInEx.Core" Version="5.*" />
+    <PackageReference Include="BepInEx.PluginInfoProps" Version="2.*" />
+    <PackageReference Include="UnityEngine.Modules" Version="6000.4.4" IncludeAssets="compile" />
+    <!-- Managed bindings only; lib/netstandard2.0 is the Mono-compatible target. -->
+    <PackageReference Include="ImGui.NET" Version="1.91.6.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Game code. Private=false keeps these out of bin/ and out of the deployed plugin. -->
+    <!-- Unity.Mathematics: Boat's driver input SyncVars are typed `half`. -->
+    <GameReference Include="Unity.Mathematics" />
+    <!-- UnityEngine.UI: EventSystem lives here, not in the Modules package. -->
+    <GameReference Include="UnityEngine.UI" />
+    <GameReference Include="Assembly-CSharp" />
+    <!-- FishNet: Player/Item derive from NetworkBehaviour, so the base type must resolve. -->
+    <GameReference Include="FishNet.Runtime" />
+    <!-- New Input System: the game uses it, so legacy UnityEngine.Input may be disabled. -->
+    <GameReference Include="Unity.InputSystem" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="@(GameReference)" Private="false">
+      <HintPath>$(GameManagedDir)\%(Identity).dll</HintPath>
+    </Reference>
+  </ItemGroup>
+
+  <Target Name="VerifyGameDir" BeforeTargets="ResolveAssemblyReferences">
+    <Error Condition="!Exists('$(GameManagedDir)')"
+           Text="Game assemblies not found at '$(GameManagedDir)'. Set the FIH_GAME_DIR environment variable to the folder containing 'How to Fish.exe', or add your Steam library to SteamLibraryRoots in fih.csproj." />
+  </Target>
+
+  <Target Name="DeployPlugin" AfterTargets="Build" Condition="'$(NoDeploy)' != 'true'">
+    <Error Condition="!Exists('$(GameDir)\BepInEx')"
+           Text="BepInEx is not installed at '$(GameDir)\BepInEx'. Install it, or build with -p:NoDeploy=true." />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(PluginDeployDir)" Retries="2" RetryDelayMilliseconds="500" />
+    <Copy SourceFiles="@(_DebugSymbolsIntermediatePath)" DestinationFolder="$(PluginDeployDir)" Condition="Exists('@(_DebugSymbolsIntermediatePath)')" />
+    <!-- BepInEx resolves plugin dependencies from the plugin's own folder. -->
+    <Copy SourceFiles="$(ImGuiManaged)" DestinationFolder="$(PluginDeployDir)"
+          Condition="Exists('$(ImGuiManaged)')" Retries="2" RetryDelayMilliseconds="500" />
+    <Copy SourceFiles="$(CimguiNative)" DestinationFolder="$(GameDir)"
+          Condition="Exists('$(CimguiNative)') And !Exists('$(GameDir)\cimgui.dll')" />
+    <Message Importance="high" Text="Deployed $(AssemblyName).dll -> $(PluginDeployDir)" />
+  </Target>
+
+</Project>
