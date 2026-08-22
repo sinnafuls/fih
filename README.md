@@ -3,8 +3,6 @@
 Debug and cheat menu for **How to Fish** (Unity 6000.4.4, Mono). BepInEx 5 + HarmonyX, with a
 Dear ImGui interface rendered through URP without shipping any Unity assets.
 
-Author: sin · [github.com/sinnafuls/fih](https://github.com/sinnafuls/fih)
-
 ## Install
 
 1. Install [BepInEx 5](https://github.com/BepInEx/BepInEx/releases) (x64, Mono) into the game
